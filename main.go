@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	_ "github.com/joho/godotenv/autoload"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -17,8 +20,7 @@ func pgxconfidk() *pgxpool.Config {
 	const defaultMaxConnIdleTime = time.Minute * 30
 	const defaultHealthCheckPeriod = time.Minute
 	const defaultConnectTimeout = time.Second * 5
-	//TODO: add the fucking .env package to fill this,cant believe this isn't vanilla
-	const DATABASE_URL string = "postgres://somepostgresurl :)"
+	DATABASE_URL := os.Getenv("DB_URL")
 
 	dbConfig, err := pgxpool.ParseConfig(DATABASE_URL)
 	if err != nil {
@@ -34,16 +36,31 @@ func pgxconfidk() *pgxpool.Config {
 	return dbConfig
 }
 
+func ensureStreamAndGroup(rdb *redis.Client, stream, group string) error {
+	// Create the stream + consumer group in one shot.
+	// MKSTREAM creates the stream if it doesn't exist yet.
+	err := rdb.XGroupCreateMkStream(context.Background(), stream, group, "$").Err()
+	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
+		return fmt.Errorf("failed to create consumer group: %w", err)
+	}
+	return nil
+}
+
 func main() {
+
 	fmt.Print("Initializing Redis Client...")
 	rdb := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		Addr: os.Getenv("REDIS_ADDR"),
 	})
 	err := rdb.Ping(context.Background()).Err()
 	if err != nil {
 		log.Fatalf("could not connect to Redis:%v", err)
 	}
 	fmt.Println("Success")
+	fmt.Println("Checking stream and group...")
+	if err := ensureStreamAndGroup(rdb, "reports_stream", "report_workers"); err != nil {
+		log.Fatal(err)
+	}
 	fmt.Print("Initializing pgsql Client...")
 	connPool, err := pgxpool.NewWithConfig(context.Background(), pgxconfidk())
 	if err != nil {
