@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"lgworker/gen/combat_events"
 	"lgworker/gen/loggingway_rpc"
+	"math"
+	"slices"
 	"sort"
 
 	"github.com/golang/protobuf/proto"
@@ -13,9 +15,32 @@ import (
 )
 
 type PlayerStats struct {
-	Name string
-	ID   uint64
+	Name                 string
+	ID                   uint64
+	ContentID            uint64
+	jobId                uint32
+	Level                uint32
+	attackPower          uint32
+	attackMagicPotency   uint32
+	weaponPhysicalDamage uint32
+	weaponMagicalDamage  uint32
+	weaponHQ             uint32
 
+	//attributes
+	tenacity      uint32
+	skillspeed    uint32
+	spellspeed    uint32
+	determination uint32
+	criticalHit   uint32
+	directHit     uint32
+
+	//Calculated fields
+	isCaster         bool
+	isTank           bool
+	isPhysicalRanged bool
+	enochianActive   bool
+	darksideActive   bool
+	//Derived statistics
 	TotalDamage     uint64
 	TotalHealing    uint64
 	TotalCrits      uint64
@@ -27,7 +52,6 @@ type PlayerStats struct {
 	FirstTimestamp int64
 	LastTimestamp  int64
 }
-
 type ActionStats struct {
 	ActionID   uint32
 	Hits       uint64
@@ -85,7 +109,10 @@ func ParseCombatEvents(
 		case *combat_events.CombatEvent_Healed:
 			handleHealing(stats, e, data.Healed)
 
+		case *combat_events.CombatEvent_PlayerJoin:
+			handleJoin(stats, e, data.PlayerJoin)
 		}
+
 	}
 
 	computeDerivedStats(stats)
@@ -100,6 +127,28 @@ func ParseCombatEvents(
 
 }
 
+func handleJoin(stats *CombatStats, e *combat_events.CombatEvent, join *combat_events.PlayerEnterCombat) {
+	player := getOrCreatePlayer(stats, e.Source, e.TimestampEpochMs)
+	//all the fields that can't be assigned by entity are here
+	player.Name = join.Name
+	//Attributes
+	player.attackPower = join.AttackPower
+	player.attackMagicPotency = join.AttackPower //TODO:add magic
+	player.criticalHit = join.CriticalHit
+	player.directHit = join.DirectHit
+	player.determination = join.Determination
+	player.skillspeed = join.Skillspeed
+	player.spellspeed = join.Spellspeed
+	player.tenacity = join.Tenacity
+	//others
+	player.jobId = join.JobId
+	player.ContentID = join.ContentId
+	//job helper flags resolution,lazy
+	player.isCaster = slices.Contains(Casters, join.JobId)
+	player.isPhysicalRanged = slices.Contains(PhysicalRanged, join.JobId)
+	player.isTank = slices.Contains(Tanks, join.JobId)
+}
+
 func handleDamage(
 	stats *CombatStats,
 	e *combat_events.CombatEvent,
@@ -112,7 +161,204 @@ func handleDamage(
 
 	player := getOrCreatePlayer(stats, e.Source, e.TimestampEpochMs)
 
-	player.TotalDamage += uint64(dmg.Amount)
+	var levelModifier = levelModifiers[player.Level]
+	var attackPower = player.attackPower
+	if player.isCaster {
+		attackPower = player.attackMagicPotency
+	}
+	var weaponDamage = math.Floor(float64(player.weaponPhysicalDamage+player.weaponHQ+levelModifier.main*jobDamageModifiers[player.jobId]/1000.0)) / 100.0
+	if player.isCaster {
+		weaponDamage = math.Floor(float64(player.weaponMagicalDamage+player.weaponHQ+levelModifier.main*jobDamageModifiers[player.jobId]/1000.0)) / 100.0
+	}
+	var levelAttackModifier = float32((player.Level-90))*4.2 + 195
+	if player.isTank {
+		levelAttackModifier = float32((player.Level-90))*3.4 + 156
+	}
+	var attack = math.Floor(float64(100.0+levelAttackModifier*(float32(attackPower)-float32(levelModifier.main))/float32(levelModifier.main)) / 100)
+	var magical = 0
+	if dmg.DamageType == combat_events.DamageType_DAMAGE_TYPE_MAGIC {
+		magical = 1
+	}
+	var speedMultiplier = 1.0
+	var skillSpeedModifier = 1000.0 + math.Ceil(float64(130.0*(levelModifier.sub-player.skillspeed)/levelModifier.div))
+	var spellSpeedModifier = 1000.0 + math.Ceil(float64(130.0*(levelModifier.sub-player.spellspeed)/levelModifier.div))
+	//&& affectedRecasts.Contains(dmg.ActionId) removed this because it seem redundant, if this is needed this can be derived by checking Cooldowngroup == 58 && Recast100ms <25 in Action.csv
+	if slices.Contains(GCD, dmg.ActionId) { // Only GCDs whose recasts are above 1.5s seem to be affected by SPS and SKS. Some specific GCDs aren't affected, but they (as far as I could tell) *always* say that in their description at the very bottom.
+		recast := 2.5 //GCD are always 25, unless you wanted the recast counting player stats?
+		if magical == 1 {
+			speedMultiplier = math.Floor((math.Floor(spellSpeedModifier*recast) / 10.0)) / 100.0 / recast
+		} else {
+			speedMultiplier = math.Floor((math.Floor(skillSpeedModifier*recast) / 10.0)) / 100.0 / recast
+		}
+	}
+	var buffMultiplier = math.Floor(100*attack*weaponDamage) / 100
+	if player.isCaster {
+		buffMultiplier *= 1.3
+	} else if player.isPhysicalRanged {
+		buffMultiplier *= 1.2
+	} else if player.isTank {
+		buffMultiplier *= math.Floor(float64(112.0*(player.tenacity-levelModifier.sub)/levelModifier.div) / 1000.0)
+	}
+	buffMultiplier *= 1.0 + math.Floor(float64(140.0*(player.determination-levelModifier.main)/levelModifier.div)/1000.0)
+	var criticalMultiplier = math.Floor(float64(200.0*(player.criticalHit-levelModifier.sub)/levelModifier.div+1400) / 1000.0)
+
+	if player.enochianActive { // These cases are for buffs that don't count as status effects for some reason. They can be read from the gauge.
+		buffMultiplier *= 1.27
+	} else if player.darksideActive {
+		buffMultiplier *= 1.1
+	}
+	var guaranteedCriticalHit = slices.Contains(guaranteedCriticalHits, dmg.ActionId)
+	var guaranteedDirectHit = slices.Contains(guaranteedDirectHits, dmg.ActionId)
+	var innerRelease = false
+	var internalBuffMultiplier = 1.0
+	var internalCriticalHitRateMultiplier = 1.0
+	var internalDirectHitRateMultiplier = 1.0
+
+	/*
+
+		Below, I introduce a few tables to reference for buffs: buffs (Divination, Brotherhood, etc.), targetBuffs (Chain Stratagem and Dokumori), criticalHitBuffs (Devilment, Battle Litany, etc.), and directHitBuffs (Devilment, Battle Voice, etc.).
+
+		The first two map the status Ids to a pair of numbers (physical and magical damage). The buffs should be in decimal format. For example, Divination is a 6% buff, so it should be (1.06, 1.06), as it buffs both physical and magical damage. Embolden (on the RDM who used it), however, only buffs magical damage by 10%, so it'd be (1.0, 1.1); on everyone else, Embolden is represented as (1.05, 1.05).
+
+		The other two tables just map the status Ids to the CH/DH rate increase.
+
+		I also introduce a falloff table (named falloffs) that has the action's falloff. For this, we also need to add whether it's the main target to DamageTakenData.
+
+		Finally, I assume that the possible potencies for an ability are stored in "potencies." For example, if you can break combo with an action, both of those potencies would be included. We'd also include positionals as other possible potencies.
+	*/
+
+	if e.SourceSnapshot != nil {
+		for _, effect := range e.SourceSnapshot.StatusEffects {
+			if effect.Id == specificStatusEffect["Inner Release"] {
+				innerRelease = true
+				break
+			}
+		}
+		for _, effect := range e.SourceSnapshot.StatusEffects {
+			buff, exists := buffs[effect.Id] // This is for the other buffs.
+			if exists {
+				if effect.SourceId == uint32(player.ID) {
+					internalBuffMultiplier *= buff[magical]
+				}
+				buffMultiplier *= buff[magical]
+			}
+			if dmg.Crit {
+				buff, exists := criticalHitBuffs[effect.Id]
+				if exists {
+					if effect.SourceId == uint32(player.ID) {
+						internalCriticalHitRateMultiplier *= buff
+					}
+					if guaranteedCriticalHit || ((dmg.ActionId == specificActions["Fell Cleave"] || dmg.ActionId == specificActions["Decimate"]) && innerRelease) { // We need to find the Ids or store/reference the ability names...
+						if effect.SourceId == uint32(player.ID) {
+							internalBuffMultiplier *= buff
+						}
+						buffMultiplier *= buff
+					}
+				}
+			}
+			if dmg.DirectHit {
+				buff, exists := directHitBuffs[effect.Id]
+				if exists {
+					if effect.SourceId == uint32(player.ID) {
+						internalDirectHitRateMultiplier *= buff
+					}
+					if guaranteedCriticalHit || ((dmg.ActionId == specificActions["Fell Cleave"] || dmg.ActionId == specificActions["Decimate"]) && innerRelease) {
+						if effect.SourceId == uint32(player.ID) {
+							internalBuffMultiplier *= buff
+						}
+						buffMultiplier *= buff
+					}
+				}
+			}
+		}
+	}
+	if e.TargetSnapshot != nil {
+		for _, effect := range e.TargetSnapshot.StatusEffects {
+			buff, exists := targetBuffs[effect.Id] // This is for Chain Stratagem and Dokumori.
+			if exists {
+				if effect.SourceId == uint32(player.ID) {
+					internalBuffMultiplier *= buff
+				}
+				buffMultiplier *= buff[magical]
+			}
+			if dmg.Crit {
+				buff, exists := criticalHitBuffs[effect.Id]
+				if exists {
+					if effect.SourceId == uint32(player.ID) {
+						internalCriticalHitRateMultiplier *= buff
+					}
+					if guaranteedCriticalHit || ((dmg.ActionId == specificActions["Fell Cleave"] || dmg.ActionId == specificActions["Decimate"]) && innerRelease) { // We need to find the Ids or store/reference the ability names...
+						if effect.SourceId == uint32(player.ID) {
+							internalBuffMultiplier *= buff
+						}
+						buffMultiplier *= buff
+					}
+				}
+			}
+			if dmg.DirectHit {
+				buff, exists := directHitBuffs[effect.Id]
+				if exists {
+					if effect.SourceId == uint32(player.ID) {
+						internalDirectHitRateMultiplier *= buff
+					}
+					if guaranteedCriticalHit || ((dmg.ActionId == specificActions["Fell Cleave"] || dmg.ActionId == specificActions["Decimate"]) && innerRelease) {
+						if effect.SourceId == uint32(player.ID) {
+							internalBuffMultiplier *= buff
+						}
+						buffMultiplier *= buff
+					}
+				}
+			}
+		}
+	}
+
+	var estimatedPotency = float64(dmg.Amount) / buffMultiplier
+
+	if !dmg.MainTarget {
+		falloff, exists := falloffs[dmg.ActionId] // For example, RDM's Resolution does 55% less damage to all other targets. This means that falloffs[resolutionId] == 0.55.
+		if exists {
+			estimatedPotency /= 1.0 - falloff
+		}
+	}
+
+	if dmg.Crit {
+		estimatedPotency /= criticalMultiplier
+	}
+	if dmg.DirectHit {
+		estimatedPotency /= 1.25
+	}
+
+	// We should also divide estimatedPotency by the damage down multiplier if the player has a damage down. We do not know the damage down multiplier directly, but we can estimate it. For example, if it's 15%, we'd divide estimatedPotency by 0.85.
+	// Weakness affects the character's statistics directly, so it's already taken into account with the earlier math.
+
+	validPotencies, exists := potencies[dmg.ActionId]
+	if exists {
+		var best = 1000000.0
+		var distance = 1000000.0
+		for _, potency := range validPotencies[dmg.ActionId] {
+			var newDistance = math.Abs(potency - estimatedPotency)
+			if newDistance < distance {
+				best = potency
+				distance = newDistance
+			}
+		}
+		estimatedPotency = best
+	}
+
+	if guaranteedCriticalHit || ((dmg.ActionId == specificActions["Fell Cleave"] || dmg.ActionId == specificActions["Decimate"]) && innerRelease) {
+		estimatedPotency *= 1.6 // To avoid gear bias, we're using a fixed increase for CHs. This is the usual damage increase from critical hit rate.
+	} else {
+		estimatedPotency += (estimatedPotency*1.6*0.25*internalCriticalHitRateMultiplier + estimatedPotency*(1.0-0.25*internalCriticalHitRateMultiplier)) - (estimatedPotency*1.6*0.25 + estimatedPotency*(1.0-0.25)) // This is just math to get the expected damage increase from critical rate increases (i.e., treating it as a damage buff). If the multiplier is 1.0, it doesn't actually do anything.
+	}
+	if guaranteedDirectHit || ((dmg.ActionId == specificActions["Fell Cleave"] || dmg.ActionId == specificActions["Decimate"]) && innerRelease) {
+		estimatedPotency *= 1.25
+	} else {
+		estimatedPotency += (estimatedPotency*1.25*0.33*internalDirectHitRateMultiplier + estimatedPotency*(1.0-0.33*internalDirectHitRateMultiplier)) - (estimatedPotency*1.25*0.33 + estimatedPotency*(1.0-0.33))
+	}
+
+	estimatedPotency *= speedMultiplier
+
+	player.TotalDamage += uint64(100.0 * estimatedPotency) // This is just to make the potency number bigger.
 	player.TotalHits++
 
 	if dmg.Crit {
@@ -132,7 +378,7 @@ func handleDamage(
 	}
 
 	action.Hits++
-	action.Damage += uint64(dmg.Amount)
+	action.Damage += uint64(100.0 * estimatedPotency)
 	if dmg.Crit {
 		action.Crits++
 	}
@@ -169,7 +415,6 @@ func getOrCreatePlayer(
 	}
 
 	p = &PlayerStats{
-		Name:            entity.Name,
 		ID:              entity.GameobjectId,
 		ActionBreakdown: make(map[uint32]*ActionStats),
 		FirstTimestamp:  ts,

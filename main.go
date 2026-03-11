@@ -67,6 +67,9 @@ func main() {
 		log.Fatalf("Failed to create database conn pool:%v", err)
 	}
 	fmt.Println("Success")
+
+	fmt.Print("Loading Action.csv data...")
+
 	for {
 		streams, err := rdb.XReadGroup(context.Background(), &redis.XReadGroupArgs{
 			Group:    "report_workers",

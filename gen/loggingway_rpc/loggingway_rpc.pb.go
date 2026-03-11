@@ -460,7 +460,7 @@ const file_loggingway_rpc_proto_rawDesc = "" +
 	"\x05Login\x12\x1c.loggingway_rpc.LoginRequest\x1a\x1a.loggingway_rpc.LoginReply\"\x00\x12U\n" +
 	"\x0fCreateNewReport\x12 .loggingway_rpc.NewReportRequest\x1a\x1e.loggingway_rpc.NewReportReply\"\x00\x12[\n" +
 	"\x0fEncounterIngest\x12#.loggingway_rpc.NewEncounterRequest\x1a!.loggingway_rpc.NewEncounterReply\"\x00\x12\\\n" +
-	"\x11CombatEventIngest\x12\x1a.combat_events.CombatEvent\x1a'.loggingway_rpc.CombatEventIngestReturn\"\x00(\x01B\x14Z\x12gen/loggingway_rpcb\x06proto3"
+	"\x11CombatEventIngest\x12\x1a.combat_events.CombatEvent\x1a'.loggingway_rpc.CombatEventIngestReturn\"\x00(\x01B2Z\x12gen/loggingway_rpc\xaa\x02\x1bLoggingWayPlugin.Loggingwayb\x06proto3"
 
 var (
 	file_loggingway_rpc_proto_rawDescOnce sync.Once
