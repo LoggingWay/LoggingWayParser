@@ -162,10 +162,7 @@ func handleDamage(
 	player := getOrCreatePlayer(stats, e.Source, e.TimestampEpochMs)
 
 	var levelModifier = levelModifiers[player.Level]
-	var attackPower = player.attackPower
-	if player.isCaster {
-		attackPower = player.attackMagicPotency
-	}
+	var attackPower = player.attackPower //attackPower is auto selected at parse time for the correct type(phys or magic)
 	var weaponDamage = math.Floor(float64(player.weaponPhysicalDamage+player.weaponHQ+levelModifier.main*jobDamageModifiers[player.jobId]/1000.0)) / 100.0
 	if player.isCaster {
 		weaponDamage = math.Floor(float64(player.weaponMagicalDamage+player.weaponHQ+levelModifier.main*jobDamageModifiers[player.jobId]/1000.0)) / 100.0
@@ -182,11 +179,10 @@ func handleDamage(
 	var speedMultiplier = 1.0
 	var skillSpeedModifier = 1000.0 + math.Ceil(float64(130.0*(levelModifier.sub-player.skillspeed)/levelModifier.div))
 	var spellSpeedModifier = 1000.0 + math.Ceil(float64(130.0*(levelModifier.sub-player.spellspeed)/levelModifier.div))
-	//&& affectedRecasts.Contains(dmg.ActionId) removed this because it seem redundant, if this is needed this can be derived by checking Cooldowngroup == 58 && Recast100ms <25 in Action.csv
-	if slices.Contains(GCD, dmg.ActionId) { // Only GCDs whose recasts are above 1.5s seem to be affected by SPS and SKS. Some specific GCDs aren't affected, but they (as far as I could tell) *always* say that in their description at the very bottom.
-		recast := 2.5 //GCD are always 25, unless you wanted the recast counting player stats?
+	if slices.Contains(GCD, dmg.ActionId) && !slices.Contains(affectedRecasts, dmg.ActionId) { // Only GCDs whose recasts are above 1.5s seem to be affected by SPS and SKS. Some specific GCDs aren't affected, but they (as far as I could tell) *always* say that in their description at the very bottom.
+		recast := GCDrecast[dmg.ActionId] //GCD are always 25, unless you wanted the recast counting player stats?
 		if magical == 1 {
-			speedMultiplier = math.Floor((math.Floor(spellSpeedModifier*recast) / 10.0)) / 100.0 / recast
+			speedMultiplier = math.Floor(math.Floor(spellSpeedModifier*recast)/10.0) / 100.0 / recast
 		} else {
 			speedMultiplier = math.Floor((math.Floor(skillSpeedModifier*recast) / 10.0)) / 100.0 / recast
 		}
@@ -238,9 +234,9 @@ func handleDamage(
 			buff, exists := buffs[effect.Id] // This is for the other buffs.
 			if exists {
 				if effect.SourceId == uint32(player.ID) {
-					internalBuffMultiplier *= buff[magical]
+					internalBuffMultiplier *= float64(buff[1])
 				}
-				buffMultiplier *= buff[magical]
+				buffMultiplier *= float64(buff[1])
 			}
 			if dmg.Crit {
 				buff, exists := criticalHitBuffs[effect.Id]
@@ -279,7 +275,7 @@ func handleDamage(
 				if effect.SourceId == uint32(player.ID) {
 					internalBuffMultiplier *= buff
 				}
-				buffMultiplier *= buff[magical]
+				buffMultiplier *= buff
 			}
 			if dmg.Crit {
 				buff, exists := criticalHitBuffs[effect.Id]
@@ -314,12 +310,12 @@ func handleDamage(
 
 	var estimatedPotency = float64(dmg.Amount) / buffMultiplier
 
-	if !dmg.MainTarget {
+	/*if !dmg.MainTarget {
 		falloff, exists := falloffs[dmg.ActionId] // For example, RDM's Resolution does 55% less damage to all other targets. This means that falloffs[resolutionId] == 0.55.
 		if exists {
 			estimatedPotency /= 1.0 - falloff
 		}
-	}
+	}*/
 
 	if dmg.Crit {
 		estimatedPotency /= criticalMultiplier
@@ -335,10 +331,10 @@ func handleDamage(
 	if exists {
 		var best = 1000000.0
 		var distance = 1000000.0
-		for _, potency := range validPotencies[dmg.ActionId] {
-			var newDistance = math.Abs(potency - estimatedPotency)
+		for potency := range validPotencies[dmg.ActionId] {
+			var newDistance = math.Abs(float64(potency) - estimatedPotency)
 			if newDistance < distance {
-				best = potency
+				best = float64(potency)
 				distance = newDistance
 			}
 		}

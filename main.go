@@ -47,7 +47,7 @@ func ensureStreamAndGroup(rdb *redis.Client, stream, group string) error {
 }
 
 func main() {
-
+	LoadCSVs()
 	fmt.Print("Initializing Redis Client...")
 	rdb := redis.NewClient(&redis.Options{
 		Addr: os.Getenv("REDIS_ADDR"),
@@ -67,8 +67,6 @@ func main() {
 		log.Fatalf("Failed to create database conn pool:%v", err)
 	}
 	fmt.Println("Success")
-
-	fmt.Print("Loading Action.csv data...")
 
 	for {
 		streams, err := rdb.XReadGroup(context.Background(), &redis.XReadGroupArgs{

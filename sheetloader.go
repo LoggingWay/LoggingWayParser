@@ -4,88 +4,90 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
+	"strconv"
 
 	"github.com/gocarina/gocsv"
 )
 
 // Load sheet.csv stuff in memory
 type ActionData struct {
-	Index                   uint32 `csv:"#"`
-	Name                    string `csv:"Name"`
-	UnlockLink              string `csv:"UnlockLink"`
-	Icon                    string `csv:"Icon"`
-	VFX                     string `csv:"VFX"`
-	ActionTimelineHit       string `csv:"ActionTimelineHit"`
-	PrimaryCostValue        string `csv:"PrimaryCostValue"`
-	SecondaryCostValue      string `csv:"SecondaryCostValue"`
-	ActionCombo             string `csv:"ActionCombo"`
-	Cast100ms               string `csv:"Cast100ms"`
-	Recast100ms             string `csv:"Recast100ms"`
-	ActionProcStatus        string `csv:"ActionProcStatus"`
-	StatusGainSelf          string `csv:"StatusGainSelf"`
-	Omen                    string `csv:"Omen"`
-	OmenAlt                 string `csv:"OmenAlt"`
-	AnimationEnd            string `csv:"AnimationEnd"`
-	ActionCategory          string `csv:"ActionCategory"`
-	Unknown1                string `csv:"Unknown1"`
-	AnimationStart          string `csv:"AnimationStart"`
-	Unknown2                string `csv:"Unknown2"`
-	BehaviourType           string `csv:"BehaviourType"`
-	ClassJobLevel           string `csv:"ClassJobLevel"`
-	CastType                string `csv:"CastType"`
-	EffectRange             string `csv:"EffectRange"`
-	XAxisModifier           string `csv:"XAxisModifier"`
-	PrimaryCostType         string `csv:"PrimaryCostType"`
-	SecondaryCostType       string `csv:"SecondaryCostType"`
-	ExtraCastTime100ms      string `csv:"ExtraCastTime100ms"`
-	CooldownGroup           string `csv:"CooldownGroup"`
-	AdditionalCooldownGroup string `csv:"AdditionalCooldownGroup"`
-	MaxCharges              string `csv:"MaxCharges"`
-	Aspect                  string `csv:"Aspect"`
-	Unknown4                string `csv:"Unknown4"`
-	ClassJobCategory        string `csv:"ClassJobCategory"`
-	AutoAttackBehaviour     string `csv:"AutoAttackBehaviour"`
-	EquivalenceGroup        string `csv:"EquivalenceGroup"`
-	Unknown70               string `csv:"Unknown_70"`
-	ClassJob                string `csv:"ClassJob"`
-	Range                   string `csv:"Range"`
-	DeadTargetBehaviour     string `csv:"DeadTargetBehaviour"`
-	AttackType              string `csv:"AttackType"`
-	Unknown8                string `csv:"Unknown8"`
-	IsRoleAction            bool   `csv:"IsRoleAction"`
-	Unknown28               string `csv:"Unknown28"`
-	CanTargetSelf           bool   `csv:"CanTargetSelf"`
-	CanTargetParty          bool   `csv:"CanTargetParty"`
-	CanTargetAlliance       bool   `csv:"CanTargetAlliance"`
-	CanTargetHostile        bool   `csv:"CanTargetHostile"`
-	CanTargetAlly           bool   `csv:"CanTargetAlly"`
-	Unknown10               string `csv:"Unknown10"`
-	TargetArea              bool   `csv:"TargetArea"`
-	CanTargetOwnPet         bool   `csv:"CanTargetOwnPet"`
-	CanTargetPartyPet       bool   `csv:"CanTargetPartyPet"`
-	RequiresLineOfSight     bool   `csv:"RequiresLineOfSight"`
-	NeedToFaceTarget        bool   `csv:"NeedToFaceTarget"`
-	Unknown14               string `csv:"Unknown14"`
-	PreservesCombo          bool   `csv:"PreservesCombo"`
-	Unknown15               string `csv:"Unknown15"`
-	AffectsPosition         bool   `csv:"AffectsPosition"`
-	IsPvP                   bool   `csv:"IsPvP"`
-	Unknown16               string `csv:"Unknown16"`
-	LogCastMessage          string `csv:"LogCastMessage"`
-	Unknown18               string `csv:"Unknown18"`
-	LogMissMessage          string `csv:"LogMissMessage"`
-	LogActionMessage        string `csv:"LogActionMessage"`
-	Unknown21               string `csv:"Unknown21"`
-	Unknown22               string `csv:"Unknown22"`
-	Unknown23               string `csv:"Unknown23"`
-	CanUseWhileMounted      bool   `csv:"CanUseWhileMounted"`
-	Unknown25               string `csv:"Unknown25"`
-	IsPlayerAction          bool   `csv:"IsPlayerAction"`
-	Unknown27               string `csv:"Unknown27"`
+	Index                   uint32  `csv:"#"`
+	Name                    string  `csv:"Name"`
+	UnlockLink              string  `csv:"UnlockLink"`
+	Icon                    string  `csv:"Icon"`
+	VFX                     string  `csv:"VFX"`
+	ActionTimelineHit       string  `csv:"ActionTimelineHit"`
+	PrimaryCostValue        string  `csv:"PrimaryCostValue"`
+	SecondaryCostValue      string  `csv:"SecondaryCostValue"`
+	ActionCombo             string  `csv:"ActionCombo"`
+	Cast100ms               string  `csv:"Cast100ms"`
+	Recast100ms             float64 `csv:"Recast100ms"`
+	ActionProcStatus        string  `csv:"ActionProcStatus"`
+	StatusGainSelf          string  `csv:"StatusGainSelf"`
+	Omen                    string  `csv:"Omen"`
+	OmenAlt                 string  `csv:"OmenAlt"`
+	AnimationEnd            string  `csv:"AnimationEnd"`
+	ActionCategory          string  `csv:"ActionCategory"`
+	Unknown1                string  `csv:"Unknown1"`
+	AnimationStart          string  `csv:"AnimationStart"`
+	Unknown2                string  `csv:"Unknown2"`
+	BehaviourType           string  `csv:"BehaviourType"`
+	ClassJobLevel           string  `csv:"ClassJobLevel"`
+	CastType                string  `csv:"CastType"`
+	EffectRange             string  `csv:"EffectRange"`
+	XAxisModifier           string  `csv:"XAxisModifier"`
+	PrimaryCostType         string  `csv:"PrimaryCostType"`
+	SecondaryCostType       string  `csv:"SecondaryCostType"`
+	ExtraCastTime100ms      string  `csv:"ExtraCastTime100ms"`
+	CooldownGroup           string  `csv:"CooldownGroup"`
+	AdditionalCooldownGroup string  `csv:"AdditionalCooldownGroup"`
+	MaxCharges              string  `csv:"MaxCharges"`
+	Aspect                  string  `csv:"Aspect"`
+	Unknown4                string  `csv:"Unknown4"`
+	ClassJobCategory        string  `csv:"ClassJobCategory"`
+	AutoAttackBehaviour     string  `csv:"AutoAttackBehaviour"`
+	EquivalenceGroup        string  `csv:"EquivalenceGroup"`
+	Unknown70               string  `csv:"Unknown_70"`
+	ClassJob                string  `csv:"ClassJob"`
+	Range                   string  `csv:"Range"`
+	DeadTargetBehaviour     string  `csv:"DeadTargetBehaviour"`
+	AttackType              string  `csv:"AttackType"`
+	Unknown8                string  `csv:"Unknown8"`
+	IsRoleAction            bool    `csv:"IsRoleAction"`
+	Unknown28               string  `csv:"Unknown28"`
+	CanTargetSelf           bool    `csv:"CanTargetSelf"`
+	CanTargetParty          bool    `csv:"CanTargetParty"`
+	CanTargetAlliance       bool    `csv:"CanTargetAlliance"`
+	CanTargetHostile        bool    `csv:"CanTargetHostile"`
+	CanTargetAlly           bool    `csv:"CanTargetAlly"`
+	Unknown10               string  `csv:"Unknown10"`
+	TargetArea              bool    `csv:"TargetArea"`
+	CanTargetOwnPet         bool    `csv:"CanTargetOwnPet"`
+	CanTargetPartyPet       bool    `csv:"CanTargetPartyPet"`
+	RequiresLineOfSight     bool    `csv:"RequiresLineOfSight"`
+	NeedToFaceTarget        bool    `csv:"NeedToFaceTarget"`
+	Unknown14               string  `csv:"Unknown14"`
+	PreservesCombo          bool    `csv:"PreservesCombo"`
+	Unknown15               string  `csv:"Unknown15"`
+	AffectsPosition         bool    `csv:"AffectsPosition"`
+	IsPvP                   bool    `csv:"IsPvP"`
+	Unknown16               string  `csv:"Unknown16"`
+	LogCastMessage          string  `csv:"LogCastMessage"`
+	Unknown18               string  `csv:"Unknown18"`
+	LogMissMessage          string  `csv:"LogMissMessage"`
+	LogActionMessage        string  `csv:"LogActionMessage"`
+	Unknown21               string  `csv:"Unknown21"`
+	Unknown22               string  `csv:"Unknown22"`
+	Unknown23               string  `csv:"Unknown23"`
+	CanUseWhileMounted      bool    `csv:"CanUseWhileMounted"`
+	Unknown25               string  `csv:"Unknown25"`
+	IsPlayerAction          bool    `csv:"IsPlayerAction"`
+	Unknown27               string  `csv:"Unknown27"`
 }
 
 type StatusData struct {
-	Index              string `csv:"#"`
+	Index              uint32 `csv:"#"`
 	Name               string `csv:"Name"`
 	Description        string `csv:"Description"`
 	Icon               string `csv:"Icon"`
@@ -124,6 +126,11 @@ type StatusData struct {
 	Unknown7           string `csv:"Unknown7"`
 }
 
+type ActionTransient struct {
+	Index uint32 `csv:"#"`
+	Text  string `csv:"Description"`
+}
+
 func LoadCSVs() {
 	fmt.Println("Loading Action.csv...")
 	actionFile, err := os.OpenFile("Action.csv", os.O_RDONLY, os.ModePerm)
@@ -138,9 +145,43 @@ func LoadCSVs() {
 	for _, action := range actions {
 		if action.CooldownGroup == "58" { //58 is the CD group for the GCD
 			GCD = append(GCD, action.Index)
+			GCDrecast[action.Index] = action.Recast100ms
+			if action.Recast100ms < 15 {
+				affectedRecasts = append(affectedRecasts, action.Index)
+			}
 		}
 	}
-	fmt.Println("Loading Status.csv...")
+	var potencyRegex = regexp.MustCompile(`(?i)potency(?:\s*:\s*|\s+of\s+)(\d+)`)
+	fmt.Println("Loading ActionTransient.csv...")
+	actionTransientFile, err := os.OpenFile("ActionTransient.csv", os.O_RDONLY, os.ModePerm)
+	if err != nil {
+		log.Fatalf("could not load ActionTransient file: %v", err)
+	}
+	defer actionTransientFile.Close()
+	descriptions := []*ActionTransient{}
+	if err := gocsv.UnmarshalFile(actionTransientFile, &descriptions); err != nil {
+		log.Fatalf("failed to unmarshal:%v", err)
+	}
+	potencies = make(map[uint32][]uint32)
+	for _, description := range descriptions {
+		if description.Text == "" { //sheet is full of empty stuff
+			continue
+		}
+		matches := potencyRegex.FindAllStringSubmatch(description.Text, -1)
+		var buffer []uint32
+		for _, match := range matches {
+			val, err := strconv.ParseUint(match[1], 10, 32)
+			if err != nil {
+				log.Fatalf("error while casting action transiant regex match:%v", err)
+			}
+			real := uint32(val) //dontask
+			buffer = append(buffer, real)
+		}
+		if len(buffer) > 0 {
+			potencies[description.Index] = buffer
+		}
+	}
+	/*fmt.Println("Loading Status.csv...")
 	statusFile, err := os.OpenFile("Status.csv", os.O_RDONLY, os.ModePerm)
 	if err != nil {
 		log.Fatalf("could not load status file: %v", err)
@@ -151,6 +192,8 @@ func LoadCSVs() {
 		log.Fatalf("failed to unmarshal:%v", err)
 	}
 	for _, status := range statuses {
-
-	}
+		if status.StatusCategory == "1" {
+			buffs = append(buffs, status.Index)
+		}
+	}*/
 }

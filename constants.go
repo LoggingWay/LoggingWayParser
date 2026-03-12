@@ -162,7 +162,35 @@ var specificStatusEffect = map[string]uint32{
 }
 
 var GCD = []uint32{}
-var buffs = []uint32{}
+var GCDrecast = map[uint32]float64{}
+var buffs = map[uint32][2]uint32{
+	1239: {0, 10},
+	1297: {5, 5},
+	1878: {6, 6},
+	1822: {5, 5},
+	2105: {5, 5},
+	3887: {6, 6},
+	3889: {6, 6},
+	3685: {5, 5},
+	1185: {5, 5},
+	2677: {10, 10},
+}
+var criticalHitBuffs = map[uint32]float64{
+	1825: 1.2,  //Devilment
+	786:  1.1,  //Battle Litany
+	2216: 1.02, //Wanderer minuet
+}
+var directHitBuffs = map[uint32]float64{
+	1825: 1.2,  //Devilment
+	141:  1.1,  //Battle Voice
+	2218: 1.03, //Army paeon
+}
+var targetBuffs = map[uint32]float64{
+	1221: 1.1, //Chain Stratagem
+	4303: 1.1, //Dokumori(2 exact same entry in the sheet?)
+}
+var potencies map[uint32][]uint32
+var affectedRecasts = []uint32{}
 
 //starfall dance,ogi,
 var guaranteedCriticalHits = []uint32{25792, 25781}
